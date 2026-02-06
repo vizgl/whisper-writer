@@ -104,6 +104,36 @@ class ResultThread(QThread):
         finally:
             self.stop_recording()
 
+    def _resolve_input_device(self, requested_device):
+        """
+        Resolve the input device index/name, falling back to the first input device.
+        """
+        device = requested_device
+        if isinstance(device, str):
+            device = device.strip()
+            if device == '':
+                device = None
+            else:
+                try:
+                    device = int(device)
+                except ValueError:
+                    pass
+
+        if device in (None, -1):
+            try:
+                devices = sd.query_devices()
+            except Exception as exc:
+                ConfigManager.console_print(f"Failed to query audio devices: {exc}")
+                return None
+
+            for idx, info in enumerate(devices):
+                if info.get('max_input_channels', 0) > 0:
+                    return idx
+
+            return None
+
+        return device
+
     def _record_audio(self):
         """
         Record audio from the microphone and save it to a temporary file.
@@ -139,8 +169,9 @@ class ResultThread(QThread):
             audio_buffer.extend(indata[:, 0])
             data_ready.set()
 
+        input_device = self._resolve_input_device(recording_options.get('sound_device'))
         with sd.InputStream(samplerate=self.sample_rate, channels=1, dtype='int16',
-                            blocksize=frame_size, device=recording_options.get('sound_device'),
+                            blocksize=frame_size, device=input_device,
                             callback=audio_callback):
             while self.is_running and self.is_recording:
                 data_ready.wait()

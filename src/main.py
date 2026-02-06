@@ -59,8 +59,16 @@ class WhisperWriterApp(QObject):
         self.main_window.startListening.connect(self.key_listener.start)
         self.main_window.closeApp.connect(self.exit_app)
 
-        if not ConfigManager.get_config_value('misc', 'hide_status_window'):
-            self.status_window = StatusWindow()
+        self.status_window = None
+        recording_mode = ConfigManager.get_config_value('recording_options', 'recording_mode')
+        show_status_window = not ConfigManager.get_config_value('misc', 'hide_status_window')
+        if recording_mode == 'manual_stop':
+            show_status_window = True
+
+        if show_status_window:
+            self.status_window = StatusWindow(show_stop_button=(recording_mode == 'manual_stop'))
+            self.status_window.closeSignal.connect(self.stop_result_thread)
+            self.status_window.stopSignal.connect(self.on_stop_button_clicked)
 
         self.create_tray_icon()
         self.key_listener.start()
@@ -149,9 +157,8 @@ class WhisperWriterApp(QObject):
             return
 
         self.result_thread = ResultThread(self.local_model)
-        if not ConfigManager.get_config_value('misc', 'hide_status_window'):
+        if self.status_window:
             self.result_thread.statusSignal.connect(self.status_window.updateStatus)
-            self.status_window.closeSignal.connect(self.stop_result_thread)
         self.result_thread.resultSignal.connect(self.on_transcription_complete)
         self.result_thread.start()
 
@@ -161,6 +168,13 @@ class WhisperWriterApp(QObject):
         """
         if self.result_thread and self.result_thread.isRunning():
             self.result_thread.stop()
+
+    def on_stop_button_clicked(self):
+        """
+        Stop the current recording and proceed to transcription.
+        """
+        if self.result_thread and self.result_thread.isRunning():
+            self.result_thread.stop_recording()
 
     def on_transcription_complete(self, result):
         """

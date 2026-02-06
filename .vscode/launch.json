@@ -1,0 +1,17 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "WhisperWriter: Run",
+      "type": "python",
+      "request": "launch",
+      "program": "${workspaceFolder}/run.py",
+      "cwd": "${workspaceFolder}",
+      "env": {
+        "PATH": "${workspaceFolder}/venv/Lib/site-packages/nvidia/cudnn/bin;${env:PATH}"
+      },
+      "console": "integratedTerminal",
+      "justMyCode": true
+    }
+  ]
+}
