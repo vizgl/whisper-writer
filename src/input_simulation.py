@@ -68,16 +68,19 @@ class InputSimulator:
 
     def _typewrite_pynput(self, text, interval):
         """
-        Simulate typing using pynput.
-
-        Args:
-            text (str): The text to type.
-            interval (float): The interval between keystrokes in seconds.
+        Simulate typing using pynput via clipboard paste for instant input.
         """
-        for char in text:
-            self.keyboard.press(char)
-            self.keyboard.release(char)
-            time.sleep(interval)
+        import pyperclip
+        from pynput.keyboard import Key
+
+        old_clipboard = pyperclip.paste()
+        pyperclip.copy(text)
+        self.keyboard.press(Key.ctrl)
+        self.keyboard.press('v')
+        self.keyboard.release('v')
+        self.keyboard.release(Key.ctrl)
+        time.sleep(0.05)
+        pyperclip.copy(old_clipboard)
 
     def _typewrite_ydotool(self, text, interval):
         """

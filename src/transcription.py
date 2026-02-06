@@ -7,6 +7,21 @@ from openai import OpenAI
 
 from utils import ConfigManager
 
+HALLUCINATION_PHRASES = [
+    "transcription by castingwords",
+    "subtitles by the amara.org community",
+    "thanks for watching",
+    "thank you for watching",
+    "please subscribe",
+    "ご視聴ありがとうございました",
+]
+
+def is_hallucination(text: str) -> bool:
+    text_lower = text.strip().lower()
+    if not text_lower:
+        return True
+    return any(phrase in text_lower for phrase in HALLUCINATION_PHRASES)
+
 def create_local_model():
     """
     Create a local model using the faster-whisper library.
@@ -100,6 +115,9 @@ def post_process_transcription(transcription):
         transcription += ' '
     if post_processing['remove_capitalization']:
         transcription = transcription.lower()
+        
+    if is_hallucination(transcription):
+        transcription = ""
 
     return transcription
 

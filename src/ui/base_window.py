@@ -42,7 +42,7 @@ class BaseWindow(QMainWindow):
         close_button_layout = QHBoxLayout(close_button_widget)
         close_button_layout.setContentsMargins(0, 0, 0, 0)
 
-        close_button = QPushButton('×')
+        close_button = QPushButton('X')
         close_button.setFixedSize(25, 25)
         close_button.setStyleSheet("""
             QPushButton {
@@ -60,7 +60,7 @@ class BaseWindow(QMainWindow):
 
         # Add widgets to the title bar layout
         title_bar_layout.addWidget(QWidget(), 1)  # Left spacer
-        title_bar_layout.addWidget(title_label, 3)  # Title (with more width)
+        #title_bar_layout.addWidget(title_label, 3)  # Title (with more width)
         title_bar_layout.addWidget(close_button_widget, 1)  # Close button
 
         self.main_layout.addWidget(title_bar)

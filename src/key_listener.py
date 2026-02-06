@@ -686,15 +686,9 @@ class EvdevBackend(InputBackend):
             self.evdev.ecodes.KEY_F24: KeyCode.F24,
 
             # Additional Media and Special Function Keys
-            self.evdev.ecodes.KEY_PLAYPAUSE: KeyCode.MEDIA_PLAY_PAUSE,
             self.evdev.ecodes.KEY_STOP: KeyCode.MEDIA_STOP,
-            self.evdev.ecodes.KEY_PREVIOUSSONG: KeyCode.MEDIA_PREVIOUS,
-            self.evdev.ecodes.KEY_NEXTSONG: KeyCode.MEDIA_NEXT,
             self.evdev.ecodes.KEY_REWIND: KeyCode.MEDIA_REWIND,
             self.evdev.ecodes.KEY_FASTFORWARD: KeyCode.MEDIA_FAST_FORWARD,
-            self.evdev.ecodes.KEY_MUTE: KeyCode.AUDIO_MUTE,
-            self.evdev.ecodes.KEY_VOLUMEUP: KeyCode.AUDIO_VOLUME_UP,
-            self.evdev.ecodes.KEY_VOLUMEDOWN: KeyCode.AUDIO_VOLUME_DOWN,
             self.evdev.ecodes.KEY_MEDIA: KeyCode.MEDIA_SELECT,
             self.evdev.ecodes.KEY_WWW: KeyCode.WWW,
             self.evdev.ecodes.KEY_MAIL: KeyCode.MAIL,
@@ -704,7 +698,6 @@ class EvdevBackend(InputBackend):
             self.evdev.ecodes.KEY_HOMEPAGE: KeyCode.APP_HOME,
             self.evdev.ecodes.KEY_BACK: KeyCode.APP_BACK,
             self.evdev.ecodes.KEY_FORWARD: KeyCode.APP_FORWARD,
-            self.evdev.ecodes.KEY_STOP: KeyCode.APP_STOP,
             self.evdev.ecodes.KEY_REFRESH: KeyCode.APP_REFRESH,
             self.evdev.ecodes.KEY_BOOKMARKS: KeyCode.APP_BOOKMARKS,
             self.evdev.ecodes.KEY_BRIGHTNESSDOWN: KeyCode.BRIGHTNESS_DOWN,
@@ -788,27 +781,48 @@ class PynputBackend(InputBackend):
             self.mouse_listener.stop()
             self.mouse_listener = None
 
-    def _translate_key_event(self, native_event) -> tuple[KeyCode, InputEvent]:
+    def _translate_key_event(self, native_event) -> tuple[KeyCode | None, InputEvent]:
         """Translate a pynput event to our internal event representation."""
         pynput_key, is_press = native_event
-        key_code = self.key_map.get(pynput_key, KeyCode.SPACE)
+
+        # FIX: Return None for unknown keys instead of defaulting to KeyCode.SPACE.
+        # When Shift is held, pynput sends uppercase chars (e.g. 'I' instead of 'i')
+        # which aren't in the key_map. The old default of KeyCode.SPACE caused
+        # any Ctrl+Shift+<key> combo to falsely trigger the Ctrl+Shift+Space chord.
+        key_code = self.key_map.get(pynput_key)
+
+        # If key not found directly, try to normalize it (handle uppercase from Shift)
+        if key_code is None and hasattr(pynput_key, 'char') and pynput_key.char is not None:
+            normalized_key = self.keyboard.KeyCode.from_char(pynput_key.char.lower())
+            key_code = self.key_map.get(normalized_key)
+
+        # If key not found by char, try matching by vk (virtual key code)
+        if key_code is None and hasattr(pynput_key, 'vk') and pynput_key.vk is not None:
+            for mapped_key, mapped_code in self.key_map.items():
+                if hasattr(mapped_key, 'vk') and mapped_key.vk == pynput_key.vk:
+                    key_code = mapped_code
+                    break
+
         event_type = InputEvent.KEY_PRESS if is_press else InputEvent.KEY_RELEASE
         return key_code, event_type
 
     def _on_keyboard_press(self, key):
         """Handle keyboard press events."""
-        translated_event = self._translate_key_event((key, True))
-        self.on_input_event(translated_event)
+        key_code, event_type = self._translate_key_event((key, True))
+        if key_code is not None:
+            self.on_input_event((key_code, event_type))
 
     def _on_keyboard_release(self, key):
         """Handle keyboard release events."""
-        translated_event = self._translate_key_event((key, False))
-        self.on_input_event(translated_event)
+        key_code, event_type = self._translate_key_event((key, False))
+        if key_code is not None:
+            self.on_input_event((key_code, event_type))
 
     def _on_mouse_click(self, x, y, button, pressed):
         """Handle mouse click events."""
-        translated_event = self._translate_key_event((button, pressed))
-        self.on_input_event(translated_event)
+        key_code, event_type = self._translate_key_event((button, pressed))
+        if key_code is not None:
+            self.on_input_event((key_code, event_type))
 
     def _create_key_map(self):
         """Create a mapping from pynput keys to our internal KeyCode enum."""
@@ -857,7 +871,7 @@ class PynputBackend(InputBackend):
             self.keyboard.KeyCode.from_char('9'): KeyCode.NINE,
             self.keyboard.KeyCode.from_char('0'): KeyCode.ZERO,
 
-            # Letter keys
+            # Letter keys (lowercase)
             self.keyboard.KeyCode.from_char('a'): KeyCode.A,
             self.keyboard.KeyCode.from_char('b'): KeyCode.B,
             self.keyboard.KeyCode.from_char('c'): KeyCode.C,
@@ -885,6 +899,34 @@ class PynputBackend(InputBackend):
             self.keyboard.KeyCode.from_char('y'): KeyCode.Y,
             self.keyboard.KeyCode.from_char('z'): KeyCode.Z,
 
+            # Letter keys (uppercase — needed when Shift is held)
+            self.keyboard.KeyCode.from_char('A'): KeyCode.A,
+            self.keyboard.KeyCode.from_char('B'): KeyCode.B,
+            self.keyboard.KeyCode.from_char('C'): KeyCode.C,
+            self.keyboard.KeyCode.from_char('D'): KeyCode.D,
+            self.keyboard.KeyCode.from_char('E'): KeyCode.E,
+            self.keyboard.KeyCode.from_char('F'): KeyCode.F,
+            self.keyboard.KeyCode.from_char('G'): KeyCode.G,
+            self.keyboard.KeyCode.from_char('H'): KeyCode.H,
+            self.keyboard.KeyCode.from_char('I'): KeyCode.I,
+            self.keyboard.KeyCode.from_char('J'): KeyCode.J,
+            self.keyboard.KeyCode.from_char('K'): KeyCode.K,
+            self.keyboard.KeyCode.from_char('L'): KeyCode.L,
+            self.keyboard.KeyCode.from_char('M'): KeyCode.M,
+            self.keyboard.KeyCode.from_char('N'): KeyCode.N,
+            self.keyboard.KeyCode.from_char('O'): KeyCode.O,
+            self.keyboard.KeyCode.from_char('P'): KeyCode.P,
+            self.keyboard.KeyCode.from_char('Q'): KeyCode.Q,
+            self.keyboard.KeyCode.from_char('R'): KeyCode.R,
+            self.keyboard.KeyCode.from_char('S'): KeyCode.S,
+            self.keyboard.KeyCode.from_char('T'): KeyCode.T,
+            self.keyboard.KeyCode.from_char('U'): KeyCode.U,
+            self.keyboard.KeyCode.from_char('V'): KeyCode.V,
+            self.keyboard.KeyCode.from_char('W'): KeyCode.W,
+            self.keyboard.KeyCode.from_char('X'): KeyCode.X,
+            self.keyboard.KeyCode.from_char('Y'): KeyCode.Y,
+            self.keyboard.KeyCode.from_char('Z'): KeyCode.Z,
+
             # Special keys
             self.keyboard.Key.space: KeyCode.SPACE,
             self.keyboard.Key.enter: KeyCode.ENTER,
@@ -910,7 +952,6 @@ class PynputBackend(InputBackend):
             self.keyboard.Key.right: KeyCode.RIGHT,
 
             # Numpad keys
-            self.keyboard.Key.num_lock: KeyCode.NUM_LOCK,
             self.keyboard.KeyCode.from_vk(96): KeyCode.NUMPAD_0,
             self.keyboard.KeyCode.from_vk(97): KeyCode.NUMPAD_1,
             self.keyboard.KeyCode.from_vk(98): KeyCode.NUMPAD_2,
