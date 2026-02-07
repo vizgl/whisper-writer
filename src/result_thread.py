@@ -31,6 +31,7 @@ class ResultThread(QThread):
 
     statusSignal = pyqtSignal(str)
     resultSignal = pyqtSignal(str)
+    audioLevelSignal = pyqtSignal(float)
 
     def __init__(self, local_model=None):
         """
@@ -184,6 +185,10 @@ class ResultThread(QThread):
                 frame = np.array(list(audio_buffer), dtype=np.int16)
                 audio_buffer.clear()
                 recording.extend(frame)
+
+                # Emit peak level for UI histogram
+                peak = float(np.abs(frame.astype(np.float32)).max()) / 32768.0
+                self.audioLevelSignal.emit(peak)
 
                 # Avoid trying to detect voice in initial frames
                 if initial_frames_to_skip > 0:

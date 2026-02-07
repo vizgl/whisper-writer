@@ -1,11 +1,12 @@
 import os
 import sys
-from PyQt5.QtGui import QFont
 from PyQt5.QtWidgets import QApplication, QPushButton, QHBoxLayout
 from PyQt5.QtCore import pyqtSignal
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.base_window import BaseWindow
+from ui.theme import font
+
 
 class MainWindow(BaseWindow):
     openSettings = pyqtSignal()
@@ -13,24 +14,18 @@ class MainWindow(BaseWindow):
     closeApp = pyqtSignal()
 
     def __init__(self):
-        """
-        Initialize the main window.
-        """
-        super().__init__('WhisperWriter', 320, 180)
+        super().__init__('WhisperWriter', 320, 170)
         self.initMainUI()
 
     def initMainUI(self):
-        """
-        Initialize the main user interface.
-        """
         start_btn = QPushButton('Start')
-        start_btn.setFont(QFont('Segoe UI', 10))
-        start_btn.setFixedSize(120, 60)
+        start_btn.setFont(font(10))
+        start_btn.setFixedSize(120, 50)
         start_btn.clicked.connect(self.startPressed)
 
         settings_btn = QPushButton('Settings')
-        settings_btn.setFont(QFont('Segoe UI', 10))
-        settings_btn.setFixedSize(120, 60)
+        settings_btn.setFont(font(10))
+        settings_btn.setFixedSize(120, 50)
         settings_btn.clicked.connect(self.openSettings.emit)
 
         button_layout = QHBoxLayout()
@@ -44,17 +39,12 @@ class MainWindow(BaseWindow):
         self.main_layout.addStretch(1)
 
     def closeEvent(self, event):
-        """
-        Close the application when the main window is closed.
-        """
         self.closeApp.emit()
 
     def startPressed(self):
-        """
-        Emit the startListening signal when the start button is pressed.
-        """
         self.startListening.emit()
         self.hide()
+
 
 if __name__ == '__main__':
     app = QApplication(sys.argv)

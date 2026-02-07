@@ -139,6 +139,7 @@ class WhisperWriterApp(QObject):
                 self.stop_result_thread()
             return
 
+        self.input_simulator.save_target_window()
         self.start_result_thread()
 
     def on_deactivation(self):
@@ -159,6 +160,7 @@ class WhisperWriterApp(QObject):
         self.result_thread = ResultThread(self.local_model)
         if self.status_window:
             self.result_thread.statusSignal.connect(self.status_window.updateStatus)
+            self.result_thread.audioLevelSignal.connect(self.status_window.updateAudioLevel)
         self.result_thread.resultSignal.connect(self.on_transcription_complete)
         self.result_thread.start()
 
