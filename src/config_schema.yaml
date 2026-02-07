@@ -16,7 +16,7 @@ model_options:
       type: float
       description: "Controls the randomness of the transcription output. Lower values make the output more focused and deterministic."
     initial_prompt:
-      value: null
+      value: "If there is silence, return empty text."
       type: str
       description: "A string used as an initial prompt to condition the transcription. More info: https://platform.openai.com/docs/guides/speech-to-text/prompting"
 
@@ -76,7 +76,7 @@ model_options:
       type: bool
       description: "Set to true to use the previously transcribed text as a prompt for the next transcription request."
     vad_filter:
-      value: false
+      value: true
       type: bool
       description: "Set to true to use a voice activity detection (VAD) filter to remove silence from the recording."
     model_path:

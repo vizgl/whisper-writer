@@ -8,12 +8,6 @@ from openai import OpenAI
 from utils import ConfigManager
 
 HALLUCINATION_PHRASES = [
-    "transcription by castingwords",
-    "subtitles by the amara.org community",
-    "thanks for watching",
-    "thank you for watching",
-    "please subscribe",
-    "ご視聴ありがとうございました",
 ]
 
 def is_hallucination(text: str) -> bool:

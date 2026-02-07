@@ -55,6 +55,8 @@ if sys.platform == 'win32':
 
     _user32.GetGUIThreadInfo.argtypes = [wintypes.DWORD, ctypes.POINTER(GUITHREADINFO)]
     _user32.GetGUIThreadInfo.restype = wintypes.BOOL
+    _user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
+    _user32.GetCursorPos.restype = wintypes.BOOL
 
 def run_command_or_exit_on_failure(command):
     """
@@ -188,27 +190,39 @@ class InputSimulator:
             ConfigManager.console_print(f"Failed to restore target window: {e}")
 
     def get_target_position(self):
-        """Return (x, y) screen coordinates below the focused input field, or None."""
-        if sys.platform != 'win32' or not self._target_hwnd:
+        """Return (x, y) screen coords below the focused input, with fallback chain:
+        1) text caret position  2) focused control rect  3) mouse cursor."""
+        if sys.platform != 'win32':
             return None
         try:
-            tid = _user32.GetWindowThreadProcessId(self._target_hwnd, None)
-            if not tid:
-                return None
+            # 1. Text caret via GetGUIThreadInfo
+            if self._target_hwnd:
+                tid = _user32.GetWindowThreadProcessId(self._target_hwnd, None)
+                if tid:
+                    gti = GUITHREADINFO()
+                    gti.cbSize = ctypes.sizeof(GUITHREADINFO)
+                    if _user32.GetGUIThreadInfo(tid, ctypes.byref(gti)) and gti.hwndCaret:
+                        pt = wintypes.POINT(gti.rcCaret.left, gti.rcCaret.bottom)
+                        _user32.ClientToScreen(gti.hwndCaret, ctypes.byref(pt))
+                        ConfigManager.console_print(f"Anchor: caret at ({pt.x}, {pt.y})")
+                        return (pt.x, pt.y)
 
-            gti = GUITHREADINFO()
-            gti.cbSize = ctypes.sizeof(GUITHREADINFO)
-            if _user32.GetGUIThreadInfo(tid, ctypes.byref(gti)) and gti.hwndCaret:
-                pt = wintypes.POINT(gti.rcCaret.left, gti.rcCaret.bottom)
-                _user32.ClientToScreen(gti.hwndCaret, ctypes.byref(pt))
+            # 2. Focused child control bounding rect
+            if self._target_hwnd:
+                hwnd = self._target_focus_hwnd or self._target_hwnd
+                if hwnd and _user32.IsWindow(hwnd):
+                    rc = wintypes.RECT()
+                    if _user32.GetWindowRect(hwnd, ctypes.byref(rc)):
+                        x = rc.left + (rc.right - rc.left) // 2
+                        y = rc.bottom
+                        ConfigManager.console_print(f"Anchor: control rect at ({x}, {y})")
+                        return (x, y)
+
+            # 3. Mouse cursor
+            pt = wintypes.POINT()
+            if _user32.GetCursorPos(ctypes.byref(pt)):
+                ConfigManager.console_print(f"Anchor: mouse cursor at ({pt.x}, {pt.y})")
                 return (pt.x, pt.y)
-
-            # Fallback: use the focused child control rect
-            hwnd = self._target_focus_hwnd or self._target_hwnd
-            if hwnd and _user32.IsWindow(hwnd):
-                rc = wintypes.RECT()
-                if _user32.GetWindowRect(hwnd, ctypes.byref(rc)):
-                    return (rc.left + (rc.right - rc.left) // 2, rc.bottom)
         except Exception as e:
             ConfigManager.console_print(f"Failed to get target position: {e}")
         return None
