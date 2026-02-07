@@ -148,6 +148,7 @@ class StatusWindow(QWidget):
         self._is_recording = False
         self._dragging    = False
         self._drag_origin = None
+        self._anchor = None  # (x, y) screen coords below input field
         self._build_ui()
         self.statusSignal.connect(self.updateStatus)
 
@@ -249,16 +250,34 @@ class StatusWindow(QWidget):
 
     # ---- positioning ---------------------------------------------------
 
+    def set_anchor(self, x, y):
+        """Set the screen position (below the input field) to anchor the window to."""
+        self._anchor = (x, y) if x is not None else None
+
     def _reposition(self):
-        cursor_pos = QCursor.pos()
+        from PyQt5.QtCore import QPoint
+
+        # Determine which screen to use
+        ref = QPoint(*self._anchor) if self._anchor else QCursor.pos()
         target = QApplication.primaryScreen()
         for scr in QApplication.screens():
-            if scr.geometry().contains(cursor_pos):
+            if scr.geometry().contains(ref):
                 target = scr
                 break
         geo = target.availableGeometry()
-        x = geo.x() + (geo.width()  - self.width())  // 2
-        y = geo.y() + geo.height() - self.height() - 60
+
+        if self._anchor:
+            ax, ay = self._anchor
+            gap = 8
+            x = ax - self.width() // 2
+            y = ay + gap
+            # Clamp to screen bounds
+            x = max(geo.x(), min(x, geo.x() + geo.width() - self.width()))
+            y = max(geo.y(), min(y, geo.y() + geo.height() - self.height()))
+        else:
+            x = geo.x() + (geo.width()  - self.width())  // 2
+            y = geo.y() + geo.height() - self.height() - 60
+
         self.move(x, y)
 
     def show(self):

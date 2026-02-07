@@ -141,6 +141,12 @@ class WhisperWriterApp(QObject):
             return
 
         self.input_simulator.save_target_window()
+        if self.status_window:
+            pos = self.input_simulator.get_target_position()
+            if pos:
+                self.status_window.set_anchor(*pos)
+            else:
+                self.status_window.set_anchor(None, None)
         self.start_result_thread()
 
     def on_deactivation(self):

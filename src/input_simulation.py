@@ -35,6 +35,27 @@ if sys.platform == 'win32':
     _user32.AttachThreadInput.restype = wintypes.BOOL
     _kernel32.GetCurrentThreadId.restype = wintypes.DWORD
 
+    _user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    _user32.GetWindowRect.restype = wintypes.BOOL
+    _user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+    _user32.ClientToScreen.restype = wintypes.BOOL
+
+    class GUITHREADINFO(ctypes.Structure):
+        _fields_ = [
+            ("cbSize", wintypes.DWORD),
+            ("flags", wintypes.DWORD),
+            ("hwndActive", wintypes.HWND),
+            ("hwndFocus", wintypes.HWND),
+            ("hwndCapture", wintypes.HWND),
+            ("hwndMenuOwner", wintypes.HWND),
+            ("hwndMoveSize", wintypes.HWND),
+            ("hwndCaret", wintypes.HWND),
+            ("rcCaret", wintypes.RECT),
+        ]
+
+    _user32.GetGUIThreadInfo.argtypes = [wintypes.DWORD, ctypes.POINTER(GUITHREADINFO)]
+    _user32.GetGUIThreadInfo.restype = wintypes.BOOL
+
 def run_command_or_exit_on_failure(command):
     """
     Run a shell command and exit if it fails.
@@ -165,6 +186,32 @@ class InputSimulator:
             ConfigManager.console_print("Restored target window focus")
         except Exception as e:
             ConfigManager.console_print(f"Failed to restore target window: {e}")
+
+    def get_target_position(self):
+        """Return (x, y) screen coordinates below the focused input field, or None."""
+        if sys.platform != 'win32' or not self._target_hwnd:
+            return None
+        try:
+            tid = _user32.GetWindowThreadProcessId(self._target_hwnd, None)
+            if not tid:
+                return None
+
+            gti = GUITHREADINFO()
+            gti.cbSize = ctypes.sizeof(GUITHREADINFO)
+            if _user32.GetGUIThreadInfo(tid, ctypes.byref(gti)) and gti.hwndCaret:
+                pt = wintypes.POINT(gti.rcCaret.left, gti.rcCaret.bottom)
+                _user32.ClientToScreen(gti.hwndCaret, ctypes.byref(pt))
+                return (pt.x, pt.y)
+
+            # Fallback: use the focused child control rect
+            hwnd = self._target_focus_hwnd or self._target_hwnd
+            if hwnd and _user32.IsWindow(hwnd):
+                rc = wintypes.RECT()
+                if _user32.GetWindowRect(hwnd, ctypes.byref(rc)):
+                    return (rc.left + (rc.right - rc.left) // 2, rc.bottom)
+        except Exception as e:
+            ConfigManager.console_print(f"Failed to get target position: {e}")
+        return None
 
     # ------------------------------------------------------------------
 
