@@ -7,7 +7,7 @@ from PyQt5.QtCore import QObject, QProcess
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QMessageBox
 
-from key_listener import KeyListener
+from key_listener import KeyListener, KeyCode
 from result_thread import ResultThread
 from ui.main_window import MainWindow
 from ui.settings_window import SettingsWindow
@@ -47,6 +47,7 @@ class WhisperWriterApp(QObject):
         self.key_listener = KeyListener()
         self.key_listener.add_callback("on_activate", self.on_activation)
         self.key_listener.add_callback("on_deactivate", self.on_deactivation)
+        self.key_listener.add_key_callback(KeyCode.ESC, self.on_esc_pressed)
 
         model_options = ConfigManager.get_config_section('model_options')
         model_path = model_options.get('local', {}).get('model_path')
@@ -170,6 +171,13 @@ class WhisperWriterApp(QObject):
         """
         if self.result_thread and self.result_thread.isRunning():
             self.result_thread.stop()
+
+    def on_esc_pressed(self):
+        """
+        Called on global Esc key press. Stops recording and proceeds to transcription.
+        """
+        if self.result_thread and self.result_thread.isRunning():
+            self.result_thread.stop_recording()
 
     def on_stop_button_clicked(self):
         """

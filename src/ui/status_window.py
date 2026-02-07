@@ -139,7 +139,7 @@ class StatusWindow(QWidget):
     stopSignal   = pyqtSignal()
 
     # Two size presets
-    REC_W,   REC_H   = 280, 128
+    REC_W,   REC_H   = 240, 110
     TRANS_W, TRANS_H  = 200, 48
 
     def __init__(self, show_stop_button=False):
@@ -161,10 +161,10 @@ class StatusWindow(QWidget):
         self.setFixedSize(self.REC_W, self.REC_H)
 
         self._root = QVBoxLayout(self)
-        self._root.setContentsMargins(14, 10, 14, 10)
+        self._root.setContentsMargins(14, 10, 14, 4)
         self._root.setSpacing(6)
 
-        # --- top row: dot + label + [stop] + close ---
+        # --- top row: dot + label + close ---
         top = QHBoxLayout()
         top.setSpacing(8)
 
@@ -173,18 +173,6 @@ class StatusWindow(QWidget):
         self._label = QLabel('Recording\u2026')
         self._label.setFont(font(11, bold=True))
         self._label.setStyleSheet('color: #e0e0e0;')
-
-        self._stop_btn = QPushButton('\u25A0  Stop')
-        self._stop_btn.setFixedHeight(26)
-        self._stop_btn.setCursor(Qt.PointingHandCursor)
-        self._stop_btn.setFont(font(9))
-        self._stop_btn.setStyleSheet(
-            'QPushButton { background:#2a2b3d; border:1px solid #3a3b4d;'
-            '              border-radius:6px; color:#e0e0e0; padding:0 12px; }'
-            'QPushButton:hover { background:#3a3b4d; border-color:#4a9eff; }'
-        )
-        self._stop_btn.clicked.connect(self.stopSignal.emit)
-        self._stop_btn.hide()
 
         self._close_btn = QPushButton('\u2715')
         self._close_btn.setFixedSize(24, 24)
@@ -198,13 +186,31 @@ class StatusWindow(QWidget):
 
         top.addWidget(self._dot, 0, Qt.AlignVCenter)
         top.addWidget(self._label, 1)
-        top.addWidget(self._stop_btn, 0, Qt.AlignVCenter)
         top.addWidget(self._close_btn, 0, Qt.AlignVCenter)
         self._root.addLayout(top)
 
-        # --- histogram ---
+        # --- middle row: histogram + stop button ---
+        mid = QHBoxLayout()
+        mid.setSpacing(6)
+
         self._histogram = _AudioLevelWidget()
-        self._root.addWidget(self._histogram)
+
+        self._stop_btn = QPushButton('\u25A0  Stop')
+        self._stop_btn.setFixedSize(64, 36)
+        self._stop_btn.setCursor(Qt.PointingHandCursor)
+        self._stop_btn.setFont(font(9))
+        self._stop_btn.setStyleSheet(
+            'QPushButton { background:#2a2b3d; border:1px solid #3a3b4d;'
+            '              border-radius:6px; color:#e0e0e0; padding:0 8px; }'
+            'QPushButton:hover { background:#3a3b4d; border-color:#4a9eff; }'
+        )
+        self._stop_btn.clicked.connect(self.stopSignal.emit)
+        self._stop_btn.hide()
+
+        mid.addWidget(self._histogram, 1)
+        mid.addWidget(self._stop_btn, 0, Qt.AlignVCenter)
+        self._mid_layout = mid
+        self._root.addLayout(mid)
 
         # --- hint ---
         self._hint = QLabel('Esc \u2014 transcribe')
@@ -241,15 +247,6 @@ class StatusWindow(QWidget):
     def mouseReleaseEvent(self, _ev):
         self._dragging = False
 
-    # ---- keyboard ------------------------------------------------------
-
-    def keyPressEvent(self, ev):
-        if ev.key() == Qt.Key_Escape:
-            if self._is_recording:
-                self.stopSignal.emit()
-        else:
-            super().keyPressEvent(ev)
-
     # ---- positioning ---------------------------------------------------
 
     def _reposition(self):
@@ -279,7 +276,7 @@ class StatusWindow(QWidget):
     # ---- mode transitions ----------------------------------------------
 
     def _enter_recording_mode(self):
-        self._root.setContentsMargins(14, 10, 14, 10)
+        self._root.setContentsMargins(14, 10, 14, 4)
         self._root.setSpacing(6)
         self._histogram.reset()
         self._histogram.show()

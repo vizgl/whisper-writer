@@ -285,6 +285,7 @@ class KeyListener:
             "on_activate": [],
             "on_deactivate": []
         }
+        self.key_press_callbacks = {}  # KeyCode -> [callbacks]
         self.load_activation_keys()
         self.initialize_backends()
         self.select_backend_from_config()
@@ -385,10 +386,18 @@ class KeyListener:
 
     def on_input_event(self, event):
         """Handle input events and trigger callbacks if the key chord becomes active or inactive."""
-        if not self.key_chord or not self.active_backend:
+        if not self.active_backend:
             return
 
         key, event_type = event
+
+        # Fire single-key callbacks
+        if event_type == InputEvent.KEY_PRESS and key in self.key_press_callbacks:
+            for cb in self.key_press_callbacks[key]:
+                cb()
+
+        if not self.key_chord:
+            return
 
         was_active = self.key_chord.is_active()
         is_active = self.key_chord.update(key, event_type)
@@ -402,6 +411,10 @@ class KeyListener:
         """Add a callback function for a specific event."""
         if event in self.callbacks:
             self.callbacks[event].append(callback)
+
+    def add_key_callback(self, key: KeyCode, callback: Callable):
+        """Add a callback that fires on a specific key press."""
+        self.key_press_callbacks.setdefault(key, []).append(callback)
 
     def _trigger_callbacks(self, event: str):
         """Trigger all callbacks associated with a specific event."""
