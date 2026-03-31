@@ -1,6 +1,7 @@
 import os
 import sys
 import math
+import ctypes
 from collections import deque
 
 from PyQt5.QtCore import Qt, pyqtSignal, pyqtSlot, QTimer, QRectF
@@ -14,7 +15,7 @@ from PyQt5.QtWidgets import (
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from ui.theme import (
     BG, BG_SECONDARY, BORDER, TEXT_DIM,
-    RED, ORANGE,
+    RED, ORANGE, GREEN,
     BAR_LOW, BAR_MID, BAR_HIGH,
     font, FONT_FAMILY,
 )
@@ -137,15 +138,19 @@ class StatusWindow(QWidget):
     statusSignal = pyqtSignal(str)
     closeSignal  = pyqtSignal()
     stopSignal   = pyqtSignal()
+    retrySignal  = pyqtSignal()
 
-    # Two size presets
+    # Size presets
     REC_W,   REC_H   = 240, 110
     TRANS_W, TRANS_H  = 200, 48
+    DONE_W,  DONE_H  = 200, 48
 
     def __init__(self, show_stop_button=False):
         super().__init__()
         self._show_stop   = show_stop_button
         self._is_recording = False
+        self._is_done     = False
+        self._dismiss_armed = False
         self._dragging    = False
         self._drag_origin = None
         self._anchor = None  # (x, y) screen coords below input field
@@ -185,8 +190,21 @@ class StatusWindow(QWidget):
         )
         self._close_btn.clicked.connect(self.close)
 
+        self._retry_btn = QPushButton('\u21bb')
+        self._retry_btn.setFixedSize(24, 24)
+        self._retry_btn.setCursor(Qt.PointingHandCursor)
+        self._retry_btn.setToolTip('Retry transcription')
+        self._retry_btn.setStyleSheet(
+            'QPushButton { background:transparent; border:none;'
+            '              color:#8888a0; font-size:15px; border-radius:12px; }'
+            'QPushButton:hover { background:#4a9eff; color:white; }'
+        )
+        self._retry_btn.clicked.connect(self.retrySignal.emit)
+        self._retry_btn.hide()
+
         top.addWidget(self._dot, 0, Qt.AlignVCenter)
         top.addWidget(self._label, 1)
+        top.addWidget(self._retry_btn, 0, Qt.AlignVCenter)
         top.addWidget(self._close_btn, 0, Qt.AlignVCenter)
         self._root.addLayout(top)
 
@@ -295,23 +313,65 @@ class StatusWindow(QWidget):
     # ---- mode transitions ----------------------------------------------
 
     def _enter_recording_mode(self):
+        self._dismiss_armed = False
+        self._stop_dismiss_timer()
         self._root.setContentsMargins(14, 10, 14, 4)
         self._root.setSpacing(6)
         self._histogram.reset()
         self._histogram.show()
         self._hint.setText('Esc \u2014 transcribe')
         self._hint.show()
+        self._retry_btn.hide()
         self._stop_btn.setVisible(self._show_stop)
         self.setFixedSize(self.REC_W, self.REC_H)
 
     def _enter_transcribing_mode(self):
+        self._dismiss_armed = False
+        self._stop_dismiss_timer()
         self._histogram.hide()
         self._hint.hide()
         self._stop_btn.hide()
+        self._retry_btn.hide()
         self._root.setContentsMargins(12, 0, 12, 0)
         self._root.setSpacing(0)
         self.setFixedSize(self.TRANS_W, self.TRANS_H)
         self._reposition()
+
+    def _enter_done_mode(self):
+        self._histogram.hide()
+        self._hint.hide()
+        self._stop_btn.hide()
+        self._retry_btn.show()
+        self._dismiss_armed = False
+        self._root.setContentsMargins(12, 0, 12, 0)
+        self._root.setSpacing(0)
+        self.setFixedSize(self.DONE_W, self.DONE_H)
+        self._reposition()
+        QTimer.singleShot(800, self._arm_dismiss)
+
+    def _arm_dismiss(self):
+        if self._is_done:
+            self._dismiss_armed = True
+            if sys.platform == 'win32':
+                self._fg_at_arm = ctypes.windll.user32.GetForegroundWindow()
+                self._dismiss_timer = QTimer(self)
+                self._dismiss_timer.timeout.connect(self._poll_dismiss)
+                self._dismiss_timer.start(200)
+
+    def _stop_dismiss_timer(self):
+        if hasattr(self, '_dismiss_timer') and self._dismiss_timer is not None:
+            self._dismiss_timer.stop()
+            self._dismiss_timer = None
+
+    def _poll_dismiss(self):
+        if not self._is_done or not self._dismiss_armed:
+            self._stop_dismiss_timer()
+            return
+        fg = ctypes.windll.user32.GetForegroundWindow()
+        my_hwnd = int(self.winId())
+        if fg != self._fg_at_arm and fg != my_hwnd:
+            self._stop_dismiss_timer()
+            self.close()
 
     # ---- public slots --------------------------------------------------
 
@@ -324,6 +384,7 @@ class StatusWindow(QWidget):
     def updateStatus(self, status):
         if status == 'recording':
             self._is_recording = True
+            self._is_done = False
             self._dot.set_color(RED)
             self._label.setText('Recording\u2026')
             self._enter_recording_mode()
@@ -331,14 +392,24 @@ class StatusWindow(QWidget):
 
         elif status == 'transcribing':
             self._is_recording = False
+            self._is_done = False
             self._dot.set_color(ORANGE)
             self._label.setText('Transcribing\u2026')
             self._enter_transcribing_mode()
 
+        elif status == 'done':
+            self._is_recording = False
+            self._is_done = True
+            self._dot.set_color(GREEN)
+            self._label.setText('Done')
+            self._enter_done_mode()
+
         if status in ('idle', 'error', 'cancel'):
             self._is_recording = False
+            self._is_done = False
             self._histogram.reset()
             self.close()
+
 
 
 # ---------------------------------------------------------------------------

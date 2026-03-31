@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QMess
 
 from key_listener import KeyListener, KeyCode
 from result_thread import ResultThread
+from retry_thread import RetryThread
 from ui.main_window import MainWindow
 from ui.settings_window import SettingsWindow
 from ui.status_window import StatusWindow
@@ -54,6 +55,8 @@ class WhisperWriterApp(QObject):
         self.local_model = create_local_model() if not model_options.get('use_api') else None
 
         self.result_thread = None
+        self.retry_thread = None
+        self.last_audio_data = None
 
         self.main_window = MainWindow()
         self.main_window.openSettings.connect(self.settings_window.show)
@@ -70,6 +73,7 @@ class WhisperWriterApp(QObject):
             self.status_window = StatusWindow(show_stop_button=(recording_mode == 'manual_stop'))
             self.status_window.closeSignal.connect(self.stop_result_thread)
             self.status_window.stopSignal.connect(self.on_stop_button_clicked)
+            self.status_window.retrySignal.connect(self.on_retry_transcription)
 
         self.create_tray_icon()
         self.key_listener.start()
@@ -164,7 +168,9 @@ class WhisperWriterApp(QObject):
         if self.result_thread and self.result_thread.isRunning():
             return
 
+        self.last_audio_data = None
         self.result_thread = ResultThread(self.local_model)
+        self.result_thread.audioDataReady.connect(self._store_audio)
         if self.status_window:
             self.result_thread.statusSignal.connect(self.status_window.updateStatus)
             self.result_thread.audioLevelSignal.connect(self.status_window.updateAudioLevel)
@@ -192,11 +198,16 @@ class WhisperWriterApp(QObject):
         if self.result_thread and self.result_thread.isRunning():
             self.result_thread.stop_recording()
 
+    def _store_audio(self, audio_data):
+        """Store recorded audio for potential retry."""
+        self.last_audio_data = audio_data
+
     def on_transcription_complete(self, result):
         """
         When the transcription is complete, type the result and start listening for the activation key again.
         """
-        self.input_simulator.typewrite(result)
+        if result:
+            self.input_simulator.typewrite(result)
 
         if ConfigManager.get_config_value('misc', 'noise_on_completion'):
             AudioPlayer(os.path.join('assets', 'beep.wav')).play(block=True)
@@ -204,7 +215,35 @@ class WhisperWriterApp(QObject):
         if ConfigManager.get_config_value('recording_options', 'recording_mode') == 'continuous':
             self.start_result_thread()
         else:
+            if self.status_window:
+                if self.last_audio_data is not None:
+                    self.status_window.updateStatus('done')
+                else:
+                    self.status_window.updateStatus('idle')
             self.key_listener.start()
+
+    def on_retry_transcription(self):
+        """Undo last insertion and re-transcribe the same audio."""
+        if self.last_audio_data is None:
+            return
+        if self.retry_thread and self.retry_thread.isRunning():
+            return
+
+        if self.status_window:
+            self.status_window.updateStatus('transcribing')
+
+        self.input_simulator.undo()
+
+        self.retry_thread = RetryThread(self.last_audio_data, self.local_model)
+        if self.status_window:
+            self.retry_thread.statusSignal.connect(self.status_window.updateStatus)
+        self.retry_thread.resultSignal.connect(self._on_retry_complete)
+        self.retry_thread.start()
+
+    def _on_retry_complete(self, result):
+        """Handle retry transcription result."""
+        if result:
+            self.input_simulator.typewrite(result)
 
     def run(self):
         """

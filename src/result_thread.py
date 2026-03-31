@@ -32,6 +32,7 @@ class ResultThread(QThread):
     statusSignal = pyqtSignal(str)
     resultSignal = pyqtSignal(str)
     audioLevelSignal = pyqtSignal(float)
+    audioDataReady = pyqtSignal(object)
 
     def __init__(self, local_model=None):
         """
@@ -81,6 +82,8 @@ class ResultThread(QThread):
                 self.statusSignal.emit('idle')
                 return
 
+            self.audioDataReady.emit(audio_data)
+
             self.statusSignal.emit('transcribing')
             ConfigManager.console_print('Transcribing...')
 
@@ -95,7 +98,6 @@ class ResultThread(QThread):
             if not self.is_running:
                 return
 
-            self.statusSignal.emit('idle')
             self.resultSignal.emit(result)
 
         except Exception as e:

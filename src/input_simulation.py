@@ -292,6 +292,17 @@ class InputSimulator:
         self.dotool_process.stdin.write(f"type {text}\n")
         self.dotool_process.stdin.flush()
 
+    def undo(self):
+        """Send Ctrl+Z to the target window to undo the last paste."""
+        self._restore_target_window()
+        from pynput.keyboard import Key
+        kb = PynputController()
+        kb.press(Key.ctrl)
+        kb.press('z')
+        kb.release('z')
+        kb.release(Key.ctrl)
+        time.sleep(0.05)
+
     def cleanup(self):
         """
         Perform cleanup operations, such as terminating the dotool process.
