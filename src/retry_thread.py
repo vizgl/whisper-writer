@@ -12,18 +12,20 @@ class RetryThread(QThread):
     statusSignal = pyqtSignal(str)
     resultSignal = pyqtSignal(str)
 
-    def __init__(self, audio_data, local_model=None):
+    def __init__(self, audio_data, local_model=None, temperature=None):
         super().__init__()
         self.audio_data = audio_data
         self.local_model = local_model
+        self.temperature = temperature
 
     def run(self):
         try:
             self.statusSignal.emit('transcribing')
-            ConfigManager.console_print('Retrying transcription...')
+            temp_str = f' (temperature={self.temperature:.2f})' if self.temperature is not None else ''
+            ConfigManager.console_print(f'Retrying transcription{temp_str}...')
 
             start = time.time()
-            result = transcribe(self.audio_data, self.local_model)
+            result = transcribe(self.audio_data, self.local_model, temperature=self.temperature)
             elapsed = time.time() - start
 
             ConfigManager.console_print(

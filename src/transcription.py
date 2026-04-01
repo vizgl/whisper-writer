@@ -53,13 +53,16 @@ def create_local_model():
     ConfigManager.console_print('Local model created.')
     return model
 
-def transcribe_local(audio_data, local_model=None):
+def transcribe_local(audio_data, local_model=None, temperature=None):
     """
     Transcribe an audio file using a local model.
     """
     if not local_model:
         local_model = create_local_model()
     model_options = ConfigManager.get_config_section('model_options')
+
+    if temperature is None:
+        temperature = model_options['common']['temperature']
 
     # Convert int16 to float32
     audio_data_float = audio_data.astype(np.float32) / 32768.0
@@ -68,11 +71,11 @@ def transcribe_local(audio_data, local_model=None):
                                       language=model_options['common']['language'],
                                       initial_prompt=model_options['common']['initial_prompt'],
                                       condition_on_previous_text=model_options['local']['condition_on_previous_text'],
-                                      temperature=model_options['common']['temperature'],
+                                      temperature=temperature,
                                       vad_filter=model_options['local']['vad_filter'],)
     return ''.join([segment.text for segment in list(response[0])])
 
-def transcribe_api(audio_data):
+def transcribe_api(audio_data, temperature=None):
     """
     Transcribe an audio file using the OpenAI API.
     """
@@ -81,6 +84,9 @@ def transcribe_api(audio_data):
         api_key=os.getenv('OPENAI_API_KEY') or None,
         base_url=model_options['api']['base_url'] or 'https://api.openai.com/v1'
     )
+
+    if temperature is None:
+        temperature = model_options['common']['temperature']
 
     # Convert numpy array to WAV file
     byte_io = io.BytesIO()
@@ -93,7 +99,7 @@ def transcribe_api(audio_data):
         file=('audio.wav', byte_io, 'audio/wav'),
         language=model_options['common']['language'],
         prompt=model_options['common']['initial_prompt'],
-        temperature=model_options['common']['temperature'],
+        temperature=temperature,
     )
     return response.text
 
@@ -115,17 +121,17 @@ def post_process_transcription(transcription):
 
     return transcription
 
-def transcribe(audio_data, local_model=None):
+def transcribe(audio_data, local_model=None, temperature=None):
     """
-    Transcribe audio date using the OpenAI API or a local model, depending on config.
+    Transcribe audio data using the OpenAI API or a local model, depending on config.
     """
     if audio_data is None:
         return ''
 
     if ConfigManager.get_config_value('model_options', 'use_api'):
-        transcription = transcribe_api(audio_data)
+        transcription = transcribe_api(audio_data, temperature=temperature)
     else:
-        transcription = transcribe_local(audio_data, local_model)
+        transcription = transcribe_local(audio_data, local_model, temperature=temperature)
 
     return post_process_transcription(transcription)
 

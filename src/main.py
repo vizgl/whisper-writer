@@ -1,6 +1,7 @@
 import os
 import sys
 import time
+import random
 from audioplayer import AudioPlayer
 from pynput.keyboard import Controller
 from PyQt5.QtCore import QObject, QProcess
@@ -57,6 +58,7 @@ class WhisperWriterApp(QObject):
         self.result_thread = None
         self.retry_thread = None
         self.last_audio_data = None
+        self._retry_count = 0
 
         self.main_window = MainWindow()
         self.main_window.openSettings.connect(self.settings_window.show)
@@ -169,6 +171,7 @@ class WhisperWriterApp(QObject):
             return
 
         self.last_audio_data = None
+        self._retry_count = 0
         self.result_thread = ResultThread(self.local_model)
         self.result_thread.audioDataReady.connect(self._store_audio)
         if self.status_window:
@@ -222,6 +225,26 @@ class WhisperWriterApp(QObject):
                     self.status_window.updateStatus('idle')
             self.key_listener.start()
 
+    @staticmethod
+    def _retry_temperature(attempt):
+        """Return temperature for a given retry attempt (1-based).
+
+        Attempts 1-2: config default (None)
+        Attempts 3-5: 0.4
+        Attempts 6-8: 0.7
+        Attempts 9-10: 1.0
+        Beyond 10: random 0.3-1.0
+        """
+        if attempt <= 2:
+            return None
+        if attempt <= 5:
+            return 0.4
+        if attempt <= 8:
+            return 0.7
+        if attempt <= 10:
+            return 1.0
+        return round(random.uniform(0.3, 1.0), 2)
+
     def on_retry_transcription(self):
         """Undo last insertion and re-transcribe the same audio."""
         if self.last_audio_data is None:
@@ -229,12 +252,15 @@ class WhisperWriterApp(QObject):
         if self.retry_thread and self.retry_thread.isRunning():
             return
 
+        self._retry_count += 1
+
         if self.status_window:
             self.status_window.updateStatus('transcribing')
 
         self.input_simulator.undo()
 
-        self.retry_thread = RetryThread(self.last_audio_data, self.local_model)
+        temp = self._retry_temperature(self._retry_count)
+        self.retry_thread = RetryThread(self.last_audio_data, self.local_model, temperature=temp)
         if self.status_window:
             self.retry_thread.statusSignal.connect(self.status_window.updateStatus)
         self.retry_thread.resultSignal.connect(self._on_retry_complete)
