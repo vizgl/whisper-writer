@@ -57,6 +57,10 @@ if sys.platform == 'win32':
     _user32.GetGUIThreadInfo.restype = wintypes.BOOL
     _user32.GetCursorPos.argtypes = [ctypes.POINTER(wintypes.POINT)]
     _user32.GetCursorPos.restype = wintypes.BOOL
+    _user32.keybd_event.argtypes = [
+        wintypes.BYTE, wintypes.BYTE, wintypes.DWORD, ctypes.c_ulong,
+    ]
+    _user32.keybd_event.restype = None
 
 def run_command_or_exit_on_failure(command):
     """
@@ -141,34 +145,59 @@ class InputSimulator:
             ConfigManager.console_print(f"Failed to save target window: {e}")
 
     def _restore_target_window(self):
-        """Restore focus to the previously saved window and control."""
+        """Restore focus to the previously saved window and control.
+
+        Returns True if the target window is now in the foreground,
+        False otherwise.
+        """
         if sys.platform != 'win32' or not self._target_hwnd:
-            return
+            return False
         try:
             if not _user32.IsWindow(self._target_hwnd):
                 ConfigManager.console_print("Target window no longer exists")
                 self._target_hwnd = None
                 self._target_focus_hwnd = None
-                return
+                return False
 
             my_tid = _kernel32.GetCurrentThreadId()
 
-            # Attach to the current foreground thread so
-            # SetForegroundWindow is allowed to succeed.
-            fg_hwnd = _user32.GetForegroundWindow()
-            fg_tid = 0
-            if fg_hwnd and fg_hwnd != self._target_hwnd:
-                fg_tid = _user32.GetWindowThreadProcessId(fg_hwnd, None)
+            for attempt in range(3):
+                # Attach to the current foreground thread so
+                # SetForegroundWindow is allowed to succeed.
+                fg_hwnd = _user32.GetForegroundWindow()
+                if fg_hwnd == self._target_hwnd:
+                    break  # already in foreground
+
+                fg_tid = 0
+                if fg_hwnd:
+                    fg_tid = _user32.GetWindowThreadProcessId(fg_hwnd, None)
+                    if fg_tid and my_tid != fg_tid:
+                        _user32.AttachThreadInput(my_tid, fg_tid, True)
+
+                if attempt > 0:
+                    # Alt-key trick: pressing and releasing Alt tells Windows
+                    # that we are "interactive", which lifts the restriction
+                    # on SetForegroundWindow.
+                    _user32.keybd_event(0x12, 0, 0, 0)                # Alt down
+                    _user32.keybd_event(0x12, 0, 0x0002, 0)           # Alt up
+
+                _user32.SetForegroundWindow(self._target_hwnd)
+
                 if fg_tid and my_tid != fg_tid:
-                    _user32.AttachThreadInput(my_tid, fg_tid, True)
+                    _user32.AttachThreadInput(my_tid, fg_tid, False)
 
-            _user32.SetForegroundWindow(self._target_hwnd)
+                time.sleep(0.05 * (attempt + 1))
 
-            if fg_tid and my_tid != fg_tid:
-                _user32.AttachThreadInput(my_tid, fg_tid, False)
+                if _user32.GetForegroundWindow() == self._target_hwnd:
+                    break
+                ConfigManager.console_print(
+                    f"SetForegroundWindow attempt {attempt + 1} did not take effect, retrying"
+                )
+
+            focused = _user32.GetForegroundWindow() == self._target_hwnd
 
             # Restore the exact child control that had focus.
-            if (self._target_focus_hwnd
+            if (focused and self._target_focus_hwnd
                     and _user32.IsWindow(self._target_focus_hwnd)):
                 target_tid = _user32.GetWindowThreadProcessId(
                     self._target_hwnd, None,
@@ -184,10 +213,17 @@ class InputSimulator:
                     if attached:
                         _user32.AttachThreadInput(my_tid, target_tid, False)
 
-            time.sleep(0.05)
-            ConfigManager.console_print("Restored target window focus")
+            if focused:
+                time.sleep(0.05)
+                ConfigManager.console_print("Restored target window focus")
+            else:
+                ConfigManager.console_print(
+                    "WARNING: Failed to restore target window focus after 3 attempts"
+                )
+            return focused
         except Exception as e:
             ConfigManager.console_print(f"Failed to restore target window: {e}")
+            return False
 
     def get_target_position(self):
         """Return (x, y) screen coords below the focused input, with fallback chain:
@@ -233,11 +269,24 @@ class InputSimulator:
         """
         Simulate typing the given text with the specified interval between keystrokes.
 
+        If focus cannot be restored to the original window, the text is left
+        in the clipboard so the user can paste it manually.
+
         Args:
             text (str): The text to type.
         """
-        self._restore_target_window()
+        focus_ok = self._restore_target_window()
         interval = ConfigManager.get_config_value('post_processing', 'writing_key_press_delay')
+
+        if not focus_ok:
+            # Leave text in clipboard as a safety net
+            import pyperclip
+            pyperclip.copy(text)
+            ConfigManager.console_print(
+                "Focus lost — transcription copied to clipboard for manual paste"
+            )
+            return
+
         if self.input_method == 'pynput':
             self._typewrite_pynput(text, interval)
         elif self.input_method == 'ydotool':

@@ -336,6 +336,8 @@ class StatusWindow(QWidget):
         self._root.setSpacing(0)
         self.setFixedSize(self.TRANS_W, self.TRANS_H)
         self._reposition()
+        # Show retry button after a delay so user can restart a hung transcription
+        QTimer.singleShot(5000, self._show_transcribing_retry)
 
     def _enter_done_mode(self):
         self._histogram.hide()
@@ -348,6 +350,11 @@ class StatusWindow(QWidget):
         self.setFixedSize(self.DONE_W, self.DONE_H)
         self._reposition()
         QTimer.singleShot(800, self._arm_dismiss)
+
+    def _show_transcribing_retry(self):
+        """Show the retry button if still stuck in transcribing mode."""
+        if not self._is_recording and not self._is_done and self.isVisible():
+            self._retry_btn.show()
 
     def _arm_dismiss(self):
         if self._is_done:

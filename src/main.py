@@ -246,18 +246,30 @@ class WhisperWriterApp(QObject):
         return round(random.uniform(0.3, 1.0), 2)
 
     def on_retry_transcription(self):
-        """Undo last insertion and re-transcribe the same audio."""
+        """Undo last insertion and re-transcribe the same audio.
+
+        Also handles the case where the original transcription is still
+        running (hung) — abandons the stuck thread and starts a fresh retry.
+        """
         if self.last_audio_data is None:
             return
         if self.retry_thread and self.retry_thread.isRunning():
             return
 
+        # If the original result_thread is still transcribing (hung),
+        # abandon it before starting the retry.
+        if self.result_thread and self.result_thread.isRunning():
+            self.result_thread.is_running = False
+            self.result_thread.resultSignal.disconnect(self.on_transcription_complete)
+            self.result_thread = None
+        else:
+            # Only undo if the previous transcription actually produced output
+            self.input_simulator.undo()
+
         self._retry_count += 1
 
         if self.status_window:
             self.status_window.updateStatus('transcribing')
-
-        self.input_simulator.undo()
 
         temp = self._retry_temperature(self._retry_count)
         self.retry_thread = RetryThread(self.last_audio_data, self.local_model, temperature=temp)
@@ -270,6 +282,14 @@ class WhisperWriterApp(QObject):
         """Handle retry transcription result."""
         if result:
             self.input_simulator.typewrite(result)
+
+        # Ensure key listener is running (needed when retrying from a hung
+        # transcription where on_transcription_complete was never called).
+        if ConfigManager.get_config_value('recording_options', 'recording_mode') != 'continuous':
+            try:
+                self.key_listener.start()
+            except Exception:
+                pass
 
     def run(self):
         """
