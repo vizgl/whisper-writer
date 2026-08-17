@@ -16,7 +16,61 @@ def is_hallucination(text: str) -> bool:
         return True
     return any(phrase in text_lower for phrase in HALLUCINATION_PHRASES)
 
+class ParakeetBackend:
+    """NVIDIA Parakeet TDT 0.6B v3 via onnx-asr. Auto-detects language (25 European languages)."""
+
+    def __init__(self):
+        import onnx_asr
+        ConfigManager.console_print('Loading Parakeet TDT 0.6B v3 (onnx-asr)...')
+        self.model = onnx_asr.load_model('nemo-parakeet-tdt-0.6b-v3')
+        ConfigManager.console_print('Parakeet model loaded.')
+
+    def transcribe(self, audio_data_float, language=None, initial_prompt=None, temperature=None):
+        # onnx-asr expects 16 kHz float32 mono waveform
+        return self.model.recognize(audio_data_float)
+
+
+class Qwen3ASRBackend:
+    """Qwen3-ASR 1.7B via transformers. Auto-detects language, handles code-switching."""
+
+    MODEL_ID = 'Qwen/Qwen3-ASR-1.7B-hf'
+
+    def __init__(self):
+        import torch
+        from transformers import AutoProcessor, AutoModelForMultimodalLM
+        ConfigManager.console_print(f'Loading {self.MODEL_ID} (transformers)...')
+        self.torch = torch
+        self.processor = AutoProcessor.from_pretrained(self.MODEL_ID)
+        self.model = AutoModelForMultimodalLM.from_pretrained(
+            self.MODEL_ID,
+            dtype='auto',
+            device_map='auto',
+        )
+        ConfigManager.console_print('Qwen3-ASR model loaded.')
+
+    def transcribe(self, audio_data_float, language=None, initial_prompt=None, temperature=None):
+        # The processor accepts a 16 kHz float32 mono waveform directly
+        inputs = self.processor.apply_transcription_request(audio=audio_data_float)
+        inputs = inputs.to(self.model.device, self.model.dtype)
+        with self.torch.inference_mode():
+            output_ids = self.model.generate(**inputs, max_new_tokens=512)
+        generated_ids = output_ids[:, inputs['input_ids'].shape[1]:]
+        return self.processor.decode(generated_ids, return_format='transcription_only')[0]
+
+
 def create_local_model():
+    """
+    Create a local transcription model based on the configured backend.
+    """
+    backend = ConfigManager.get_config_value('model_options', 'local', 'backend') or 'faster_whisper'
+    if backend == 'parakeet':
+        return ParakeetBackend()
+    if backend == 'qwen3_asr':
+        return Qwen3ASRBackend()
+    return create_whisper_model()
+
+
+def create_whisper_model():
     """
     Create a local model using the faster-whisper library.
     """
@@ -66,6 +120,12 @@ def transcribe_local(audio_data, local_model=None, temperature=None):
 
     # Convert int16 to float32
     audio_data_float = audio_data.astype(np.float32) / 32768.0
+
+    if isinstance(local_model, (ParakeetBackend, Qwen3ASRBackend)):
+        return local_model.transcribe(audio_data_float,
+                                      language=model_options['common']['language'],
+                                      initial_prompt=model_options['common']['initial_prompt'],
+                                      temperature=temperature)
 
     response = local_model.transcribe(audio=audio_data_float,
                                       language=model_options['common']['language'],

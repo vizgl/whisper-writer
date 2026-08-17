@@ -1,3 +1,11 @@
+# torch must be imported before PyQt5 on Windows: if Qt's DLLs load first,
+# torch's c10.dll fails to initialize (WinError 1114). ctranslate2 imports
+# torch whenever it is installed, so this affects every backend, not just qwen3_asr.
+try:
+    import torch  # noqa: F401
+except ImportError:
+    pass
+
 import ctypes
 import os
 import sys

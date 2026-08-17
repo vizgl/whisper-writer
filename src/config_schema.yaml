@@ -35,12 +35,20 @@ model_options:
       type: str
       description: "Your API key for the OpenAI API. Required for non-local API usage."
 
-  # Configuration options for the faster-whisper model
+  # Configuration options for the local transcription backends
   local:
+    backend:
+      value: faster_whisper
+      type: str
+      description: "The local transcription engine. 'faster_whisper' uses the Whisper model selected below. 'parakeet' uses NVIDIA Parakeet TDT 0.6B v3 (fast, 25 languages incl. Russian). 'qwen3_asr' uses Qwen3-ASR 1.7B (best for mixed Russian/English speech, requires PyTorch + transformers)."
+      options:
+        - faster_whisper
+        - parakeet
+        - qwen3_asr
     model:
       value: base
       type: str
-      description: "The model to use for transcription. The larger models provide better accuracy but are slower."
+      description: "The Whisper model to use for transcription (only applies when backend is 'faster_whisper'). The larger models provide better accuracy but are slower."
       options:
         - base
         - base.en
