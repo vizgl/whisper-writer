@@ -1,3 +1,4 @@
+import time
 from abc import ABC, abstractmethod
 from enum import Enum, auto
 from typing import Callable, Set
@@ -242,6 +243,14 @@ class InputBackend(ABC):
         """
         pass
 
+    def on_raw_activity(self):
+        """
+        Called on any raw input activity (including events that are not
+        translated, e.g. mouse movement). Used as a hook-liveness signal.
+        Overridden by the KeyListener.
+        """
+        pass
+
 class KeyChord:
     """
     Represents a combination of keys that need to be pressed simultaneously.
@@ -286,6 +295,7 @@ class KeyListener:
             "on_deactivate": []
         }
         self.key_press_callbacks = {}  # KeyCode -> [callbacks]
+        self.last_event_time = time.monotonic()
         self.load_activation_keys()
         self.initialize_backends()
         self.select_backend_from_config()
@@ -323,6 +333,7 @@ class KeyListener:
             raise RuntimeError("No supported input backend found")
         self.active_backend = self.backends[0]
         self.active_backend.on_input_event = self.on_input_event
+        self.active_backend.on_raw_activity = self._stamp_activity
 
     def set_active_backend(self, backend_class):
         """Set a specific backend as active."""
@@ -332,6 +343,7 @@ class KeyListener:
                 self.stop()
             self.active_backend = new_backend
             self.active_backend.on_input_event = self.on_input_event
+            self.active_backend.on_raw_activity = self._stamp_activity
             self.start()
         else:
             raise ValueError(f"Backend {backend_class.__name__} is not available")
@@ -351,6 +363,22 @@ class KeyListener:
         """Stop the active backend."""
         if self.active_backend:
             self.active_backend.stop()
+
+    def restart(self):
+        """Reinstall OS-level input hooks.
+
+        Windows silently disconnects low-level hooks whose callbacks are too
+        slow to respond (e.g. while the GIL is held during transcription);
+        the listener thread stays alive but never receives events again.
+        A stop/start cycle installs fresh hooks.
+        """
+        self.stop()
+        self.start()
+        self.last_event_time = time.monotonic()
+
+    def _stamp_activity(self):
+        """Record that the OS-level hooks are alive and delivering events."""
+        self.last_event_time = time.monotonic()
 
     def load_activation_keys(self):
         """Load activation keys from configuration."""
@@ -386,6 +414,7 @@ class KeyListener:
 
     def on_input_event(self, event):
         """Handle input events and trigger callbacks if the key chord becomes active or inactive."""
+        self.last_event_time = time.monotonic()
         if not self.active_backend:
             return
 
@@ -449,6 +478,11 @@ class EvdevBackend(InputBackend):
 
     def start(self):
         """Start the evdev backend."""
+        # Already listening — see PynputBackend.start() for why restarting
+        # must not stack another listener.
+        if self.thread is not None and self.thread.is_alive():
+            return
+
         import evdev
         import threading
         self.evdev = evdev
@@ -769,6 +803,12 @@ class PynputBackend(InputBackend):
 
     def start(self):
         """Start listening for keyboard and mouse events."""
+        # Already listening — restarting would stack an extra Win32 low-level
+        # hook per call (main.py calls start() after every transcription),
+        # which duplicates/delays events until Windows drops the hooks.
+        if self.keyboard_listener is not None:
+            return
+
         if self.keyboard is None or self.mouse is None:
             from pynput import keyboard, mouse
             self.keyboard = keyboard
@@ -780,7 +820,8 @@ class PynputBackend(InputBackend):
             on_release=self._on_keyboard_release
         )
         self.mouse_listener = self.mouse.Listener(
-            on_click=self._on_mouse_click
+            on_click=self._on_mouse_click,
+            on_move=self._on_mouse_move,
         )
         self.keyboard_listener.start()
         self.mouse_listener.start()
@@ -836,6 +877,10 @@ class PynputBackend(InputBackend):
         key_code, event_type = self._translate_key_event((button, pressed))
         if key_code is not None:
             self.on_input_event((key_code, event_type))
+
+    def _on_mouse_move(self, x, y):
+        """Mouse movement is only used as a hook-liveness signal."""
+        self.on_raw_activity()
 
     def _create_key_map(self):
         """Create a mapping from pynput keys to our internal KeyCode enum."""

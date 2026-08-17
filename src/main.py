@@ -1,10 +1,11 @@
+import ctypes
 import os
 import sys
 import time
 import random
 from audioplayer import AudioPlayer
 from pynput.keyboard import Controller
-from PyQt5.QtCore import QObject, QProcess
+from PyQt5.QtCore import QObject, QProcess, QTimer
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QApplication, QSystemTrayIcon, QMenu, QAction, QMessageBox
 
@@ -79,6 +80,37 @@ class WhisperWriterApp(QObject):
 
         self.create_tray_icon()
         self.key_listener.start()
+
+        # Windows silently drops low-level hooks whose callbacks respond too
+        # slowly (GIL held during model load / transcription). The listener
+        # thread survives but never sees events again, so the hotkey "dies".
+        # Watchdog: if the OS reports recent user input while our hooks have
+        # seen nothing for much longer, reinstall the hooks.
+        if sys.platform == 'win32':
+            self._hook_watchdog = QTimer(self)
+            self._hook_watchdog.timeout.connect(self._check_input_hooks)
+            self._hook_watchdog.start(15000)
+
+    def _check_input_hooks(self):
+        """Reinstall input hooks if Windows has silently disconnected them."""
+        class LASTINPUTINFO(ctypes.Structure):
+            _fields_ = [('cbSize', ctypes.c_uint), ('dwTime', ctypes.c_uint)]
+
+        lii = LASTINPUTINFO()
+        lii.cbSize = ctypes.sizeof(LASTINPUTINFO)
+        if not ctypes.windll.user32.GetLastInputInfo(ctypes.byref(lii)):
+            return
+
+        idle_ms = ctypes.windll.kernel32.GetTickCount() - lii.dwTime
+        hooks_stale_s = time.monotonic() - self.key_listener.last_event_time
+
+        # The OS saw user input seconds ago, but our hooks have been silent
+        # far longer — they are dead, not idle.
+        if idle_ms < 10_000 and hooks_stale_s > 30:
+            ConfigManager.console_print(
+                'Input hooks appear disconnected — reinstalling listeners'
+            )
+            self.key_listener.restart()
 
     def create_tray_icon(self):
         """
@@ -174,6 +206,7 @@ class WhisperWriterApp(QObject):
         self._retry_count = 0
         self.result_thread = ResultThread(self.local_model)
         self.result_thread.audioDataReady.connect(self._store_audio)
+        self.result_thread.errorSignal.connect(self.on_thread_error)
         if self.status_window:
             self.result_thread.statusSignal.connect(self.status_window.updateStatus)
             self.result_thread.audioLevelSignal.connect(self.status_window.updateAudioLevel)
@@ -201,6 +234,13 @@ class WhisperWriterApp(QObject):
         if self.result_thread and self.result_thread.isRunning():
             self.result_thread.stop_recording()
 
+    def on_thread_error(self, message):
+        """Surface recording/transcription errors via a tray notification."""
+        tray = getattr(self, 'tray_icon', None)
+        if tray:
+            tray.showMessage('WhisperWriter', message,
+                             QSystemTrayIcon.Critical, 8000)
+
     def _store_audio(self, audio_data):
         """Store recorded audio for potential retry."""
         self.last_audio_data = audio_data
@@ -223,7 +263,9 @@ class WhisperWriterApp(QObject):
                     self.status_window.updateStatus('done')
                 else:
                     self.status_window.updateStatus('idle')
-            self.key_listener.start()
+            # restart(), not start(): transcription is the GIL-heavy phase
+            # most likely to get our hooks silently dropped by Windows.
+            self.key_listener.restart()
 
     @staticmethod
     def _retry_temperature(attempt):
@@ -261,6 +303,12 @@ class WhisperWriterApp(QObject):
         if self.result_thread and self.result_thread.isRunning():
             self.result_thread.is_running = False
             self.result_thread.resultSignal.disconnect(self.on_transcription_complete)
+            # Fully detach the zombie thread: a late 'error'/'idle' from it
+            # would otherwise close the status window mid-retry or during a
+            # new recording.
+            if self.status_window:
+                self.result_thread.statusSignal.disconnect(self.status_window.updateStatus)
+                self.result_thread.audioLevelSignal.disconnect(self.status_window.updateAudioLevel)
             self.result_thread = None
         else:
             # Only undo if the previous transcription actually produced output
@@ -287,7 +335,7 @@ class WhisperWriterApp(QObject):
         # transcription where on_transcription_complete was never called).
         if ConfigManager.get_config_value('recording_options', 'recording_mode') != 'continuous':
             try:
-                self.key_listener.start()
+                self.key_listener.restart()
             except Exception:
                 pass
 

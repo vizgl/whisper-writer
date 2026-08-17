@@ -150,6 +150,7 @@ class StatusWindow(QWidget):
         self._show_stop   = show_stop_button
         self._is_recording = False
         self._is_done     = False
+        self._is_error    = False
         self._dismiss_armed = False
         self._dragging    = False
         self._drag_origin = None
@@ -411,9 +412,37 @@ class StatusWindow(QWidget):
             self._label.setText('Done')
             self._enter_done_mode()
 
-        if status in ('idle', 'error', 'cancel'):
+        elif status == 'error':
+            # Keep the window up briefly so the failure is visible instead of
+            # flashing open/closed; details go to the tray notification.
             self._is_recording = False
             self._is_done = False
+            self._is_error = True
+            self._dot.set_color(RED)
+            self._label.setText('Error')
+            self._histogram.hide()
+            self._hint.hide()
+            self._stop_btn.hide()
+            self._retry_btn.hide()
+            self._root.setContentsMargins(12, 0, 12, 0)
+            self._root.setSpacing(0)
+            self.setFixedSize(self.TRANS_W, self.TRANS_H)
+            self._reposition()
+            QTimer.singleShot(2500, self._close_if_error)
+
+        if status != 'error':
+            self._is_error = False
+
+        if status in ('idle', 'cancel'):
+            self._is_recording = False
+            self._is_done = False
+            self._histogram.reset()
+            self.close()
+
+    def _close_if_error(self):
+        """Close the window after the error display delay, unless a new
+        recording/transcription has started in the meantime."""
+        if self._is_error:
             self._histogram.reset()
             self.close()
 
