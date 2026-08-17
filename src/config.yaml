@@ -1,0 +1,43 @@
+misc:
+  hide_status_window: false
+  noise_on_completion: false
+  print_to_terminal: true
+model_options:
+  api:
+    api_key: null
+    base_url: https://api.openai.com/v1
+    model: whisper-1
+  common:
+    initial_prompt: 'Диктовка разработчика: промпты для AI-ассистентов, обсуждение кода
+      и технологий, смесь русского с английскими терминами. Словарь: Claude Code, Claude,
+      Anthropic, Qwen3-ASR, Qwen, Parakeet, Whisper, faster-whisper, WhisperWriter, Voxtral,
+      Mistral, GigaAM, Gemini, ChatGPT, OpenAI, GPT, Groq, NVIDIA, CUDA, GPU, VRAM, PyTorch,
+      transformers, onnxruntime, ONNX, Hugging Face, Python, venv, pip, YAML, JSON, UTF-8,
+      API, SDK, LLM, ASR, backend, frontend, config, prompt, token, hotkey, Cursor, VS Code,
+      GitHub, git, commit, push, merge, branch, pull request, debug, deploy, review,
+      транскрибация, транскрибировать.'
+    language: null
+    temperature: 0.5
+  local:
+    backend: qwen3_asr
+    compute_type: default
+    condition_on_previous_text: true
+    device: auto
+    model: large-v3
+    model_path: null
+    vad_filter: true
+  use_api: false
+post_processing:
+  add_trailing_space: true
+  input_method: pynput
+  remove_capitalization: false
+  remove_trailing_period: false
+  writing_key_press_delay: 0.005
+recording_options:
+  activation_key: ctrl+alt+space
+  input_backend: auto
+  min_duration: 100
+  recording_mode: manual_stop
+  sample_rate: 16000
+  silence_duration: 900
+  sound_device: null
