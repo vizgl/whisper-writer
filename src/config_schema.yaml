@@ -18,7 +18,7 @@ model_options:
     initial_prompt:
       value: "If there is silence, return empty text."
       type: str
-      description: "A string used as an initial prompt to condition the transcription. More info: https://platform.openai.com/docs/guides/speech-to-text/prompting"
+      description: "A string used to condition the transcription. For Whisper backends this is the initial prompt; for qwen3_asr it is used as a hotword/context list — put your frequently used domain terms here (e.g. 'Claude Code, backend, ASR') so the model spells them correctly."
 
   # Configuration options for the OpenAI API
   api:

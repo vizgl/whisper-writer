@@ -49,11 +49,18 @@ class Qwen3ASRBackend:
         ConfigManager.console_print('Qwen3-ASR model loaded.')
 
     def transcribe(self, audio_data_float, language=None, initial_prompt=None, temperature=None):
+        request_kwargs = {}
+        if language:
+            request_kwargs['language'] = language
+        if initial_prompt:
+            # Used as hotword/context bias: a list of domain terms helps the
+            # model spell them correctly (e.g. English tech terms in Russian speech)
+            request_kwargs['prompt'] = initial_prompt
         # The processor accepts a 16 kHz float32 mono waveform directly
-        inputs = self.processor.apply_transcription_request(audio=audio_data_float)
+        inputs = self.processor.apply_transcription_request(audio=audio_data_float, **request_kwargs)
         inputs = inputs.to(self.model.device, self.model.dtype)
         with self.torch.inference_mode():
-            output_ids = self.model.generate(**inputs, max_new_tokens=512)
+            output_ids = self.model.generate(**inputs, max_new_tokens=512, do_sample=False)
         generated_ids = output_ids[:, inputs['input_ids'].shape[1]:]
         return self.processor.decode(generated_ids, return_format='transcription_only')[0]
 
